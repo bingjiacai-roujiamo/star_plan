@@ -60,17 +60,35 @@ def prepare_input_data(baseline_hbsag, week12_hbsag, week12_alt, week12_hbsab, w
         'DNA12w': [dna12w]
     })
     
+    # Select only the features used in the model
+    input_df = input_df[final_selected_features]
+    
     # Create a copy for display (unscaled)
     display_df = input_df.copy()
     
-    # Scale the input dataframe
-    input_df_scaled = pd.DataFrame(
-        scaler.transform(input_df),
-        index=input_df.index,
-        columns=input_df.columns
-    )
+    # Standardize the numeric features
+    numeric_cols = [col for col in input_df.columns if col in numeric_features]
     
-    return input_df_scaled, display_df
+    if numeric_cols:
+        # Create a temporary dataframe with all numeric features (required for scaler)
+        temp_df = pd.DataFrame(0, index=[0], columns=numeric_features)
+        
+        # Fill in the values from input_df for selected numeric features
+        for feature in numeric_cols:
+            temp_df[feature] = input_df[feature]
+        
+        # Apply the scaler
+        temp_df_scaled = pd.DataFrame(
+            scaler.transform(temp_df),
+            index=temp_df.index,
+            columns=temp_df.columns
+        )
+        
+        # Copy back scaled values to input_df
+        for feature in numeric_cols:
+            input_df[feature] = temp_df_scaled[feature]
+    
+    return input_df, display_df
 
 # Function to make prediction
 def predict(input_df):
