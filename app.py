@@ -94,8 +94,8 @@ def generate_shap_explanation(input_df, display_df):
     shap_values = explainer(input_df)
 
     example_shap_values = shap.Explanation(
-        values=shap_values.values[0, :, 1],
-        base_values=explainer.expected_value[1],
+        values=shap_values.values[0, :],
+        base_values=explainer.expected_value,
         data=display_df.values[0],
         feature_names=display_df.columns.tolist()
     )
