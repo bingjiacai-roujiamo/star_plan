@@ -7,6 +7,7 @@ import shap
 import os
 import base64
 from io import BytesIO
+import lightgbm as lgb
 
 # Set page config
 st.set_page_config(
