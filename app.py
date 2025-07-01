@@ -8,183 +8,166 @@ import os
 import base64
 from io import BytesIO
 import lightgbm as lgb
+from sklearn.preprocessing import StandardScaler
 
-# Set page config
+# ---------------------------
+# Step 1: Ensure reduced scaler exists
+# ---------------------------
+def ensure_reduced_scaler():
+    full_scaler_path = "model/scaler.pkl"
+    reduced_scaler_path = "model/scaler_reduced.pkl"
+    selected_features = ['HBsAgbaseline', 'ALT12w_HBsAg12w', 'ALT12w_HBsAg', 'HBsAb12w', 'DNA12w']
+
+    if not os.path.exists(reduced_scaler_path):
+        scaler_full = joblib.load(full_scaler_path)
+        selected_indices = [list(scaler_full.feature_names_in_).index(f) for f in selected_features]
+
+        scaler_reduced = StandardScaler()
+        scaler_reduced.mean_ = scaler_full.mean_[selected_indices]
+        scaler_reduced.scale_ = scaler_full.scale_[selected_indices]
+        scaler_reduced.var_ = scaler_full.var_[selected_indices]
+        scaler_reduced.n_features_in_ = len(selected_features)
+        scaler_reduced.feature_names_in_ = np.array(selected_features, dtype=object)
+
+        joblib.dump(scaler_reduced, reduced_scaler_path)
+        print("✅ Reduced scaler created and saved.")
+
+# ---------------------------
+# Streamlit Page Setup
+# ---------------------------
 st.set_page_config(
-    page_title="Hepatitis B Surface Antigen Clearance Prediction",
+    page_title="HBsAg Clearance Prediction",
     page_icon="🧬",
     layout="wide"
 )
 
-# Function to load model and preprocessing objects
+# Ensure reduced scaler exists before loading
+ensure_reduced_scaler()
+
 @st.cache_resource
 def load_model_and_preprocessors():
     model_dir = "model"
-    # Load model and preprocessing objects
     lgbm_model = joblib.load(os.path.join(model_dir, "LGB_model.pkl"))
-    scaler = joblib.load(os.path.join(model_dir, "scaler_reduced.pkl"))  # 使用裁剪后的scaler
+    scaler = joblib.load(os.path.join(model_dir, "scaler_reduced.pkl"))
     final_selected_features = ['HBsAgbaseline', 'ALT12w_HBsAg12w', 'ALT12w_HBsAg',
                                'HBsAg12wdown_1', 'HBsAb12w', 'DNA12w']
     numeric_features = ['HBsAgbaseline', 'ALT12w_HBsAg12w', 'ALT12w_HBsAg', 'HBsAb12w', 'DNA12w']
-    categorical_features = ['HBsAg12wdown_1']
-    return lgbm_model, scaler, final_selected_features, numeric_features, categorical_features
+    return lgbm_model, scaler, final_selected_features, numeric_features
 
-# Load model and preprocessors
-lgbm_model, scaler, final_selected_features, numeric_features, categorical_features = load_model_and_preprocessors()
+lgbm_model, scaler, final_selected_features, numeric_features = load_model_and_preprocessors()
 
-# Function to prepare input data for prediction
 def prepare_input_data(baseline_hbsag, week12_hbsag, week12_alt, week12_hbsab, week12_dna):
-    # Adjust HBsAg values if ≤ 0.05
     baseline_hbsag = 0.01 if baseline_hbsag <= 0.05 else baseline_hbsag
     week12_hbsag = 0.01 if week12_hbsag <= 0.05 else week12_hbsag
 
-    # Calculate derived features
-    hbsag_baseline = baseline_hbsag
     alt12w_hbsag12w = week12_alt / week12_hbsag if week12_hbsag > 0 else 0
     alt12w_hbsag = week12_alt / baseline_hbsag if baseline_hbsag > 0 else 0
-    if baseline_hbsag > 0 and week12_hbsag > 0:
-        log_diff = np.log10(baseline_hbsag / week12_hbsag)
-        hbsag12wdown_1 = 1 if log_diff >= 1 else 0
-    else:
-        hbsag12wdown_1 = 0
-    hbsab12w = week12_hbsab
-    dna12w = week12_dna
+    hbsag12wdown_1 = 1 if np.log10(baseline_hbsag / week12_hbsag) >= 1 else 0
 
-    # Create input dataframe
     input_df = pd.DataFrame({
-        'HBsAgbaseline': [hbsag_baseline],
+        'HBsAgbaseline': [baseline_hbsag],
         'ALT12w_HBsAg12w': [alt12w_hbsag12w],
         'ALT12w_HBsAg': [alt12w_hbsag],
         'HBsAg12wdown_1': [hbsag12wdown_1],
-        'HBsAb12w': [hbsab12w],
-        'DNA12w': [dna12w]
+        'HBsAb12w': [week12_hbsab],
+        'DNA12w': [week12_dna]
     })
 
     display_df = input_df.copy()
 
-    # Standardize numeric features using reduced scaler
-    temp_df = input_df[numeric_features].copy()
+    # 标准化
+    temp_df = input_df[numeric_features]
     temp_df_scaled = pd.DataFrame(
         scaler.transform(temp_df),
         columns=numeric_features,
         index=temp_df.index
     )
-
-    # Replace numeric features in input_df with scaled values
     input_df[numeric_features] = temp_df_scaled
 
     return input_df, display_df
 
-# Prediction function
 def predict(input_df):
     return lgbm_model.predict_proba(input_df)[0, 1]
 
-# SHAP explanation
 def generate_shap_explanation(input_df, display_df):
     explainer = shap.TreeExplainer(lgbm_model)
     shap_values = explainer(input_df)
 
-    display_values = display_df.values[0]
-    feature_names = list(input_df.columns)
-
     example_shap_values = shap.Explanation(
         values=shap_values.values[0, :, 1],
         base_values=explainer.expected_value[1],
-        data=display_values,
-        feature_names=feature_names
+        data=display_df.values[0],
+        feature_names=display_df.columns.tolist()
     )
 
     plt.figure(figsize=(10, 6))
     shap.plots.waterfall(example_shap_values, show=False)
-    plt.title("Feature Impact on Prediction", fontsize=14)
-    plt.tight_layout()
-
     buffer = BytesIO()
     plt.savefig(buffer, format='png', dpi=150, bbox_inches='tight')
     buffer.seek(0)
     image_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
     plt.close()
-
     return image_base64
 
-# UI
-st.title("Hepatitis B Surface Antigen Clearance Prediction")
-st.write("This tool predicts the probability of hepatitis B surface antigen clearance at 48 weeks based on baseline and 12-week measurements.")
+# ---------------------------
+# UI 部分
+# ---------------------------
+st.title("HBsAg Clearance Prediction")
+st.write("预测患者在48周时清除HBsAg的概率")
 
 with st.container():
-    st.subheader("Patient Measurements")
+    st.subheader("输入患者数据")
     col1, col2, col3 = st.columns(3)
     with col1:
-        baseline_hbsag = st.number_input("Baseline HBsAg (IU/mL)", min_value=0.0, max_value=25000.0, value=10.0, step=1.0)
+        baseline_hbsag = st.number_input("Baseline HBsAg (IU/mL)", 0.0, 25000.0, 10.0, 1.0)
     with col2:
-        week12_hbsag = st.number_input("Week 12 HBsAg (IU/mL)", min_value=0.0, max_value=25000.0, value=10.0, step=1.0)
-        st.caption("ℹ️ Enter 0.05 if ≤ 0.05; adjusted to 0.01.")
+        week12_hbsag = st.number_input("Week 12 HBsAg (IU/mL)", 0.0, 25000.0, 10.0, 1.0)
+        st.caption("ℹ️ 输入 ≤ 0.05 用 0.05，系统内部会转换为 0.01")
     with col3:
-        week12_alt = st.number_input("Week 12 ALT (IU/L)", min_value=0, max_value=5000, value=40, step=1)
+        week12_alt = st.number_input("Week 12 ALT (IU/L)", 0, 5000, 40, 1)
 
     col4, col5 = st.columns(2)
     with col4:
-        week12_hbsab = st.number_input("Week 12 HBsAb", min_value=0.0, value=0.0, step=0.1)
+        week12_hbsab = st.number_input("Week 12 HBsAb", 0.0, value=0.0, step=0.1)
     with col5:
-        week12_dna = st.number_input("Week 12 DNA", min_value=0.0, value=0.0, step=0.1)
+        week12_dna = st.number_input("Week 12 DNA", 0.0, value=0.0, step=0.1)
 
-if st.button("Calculate Prediction"):
+if st.button("开始预测"):
     input_df, display_df = prepare_input_data(baseline_hbsag, week12_hbsag, week12_alt, week12_hbsab, week12_dna)
-    
-    alt12w_hbsag12w = display_df['ALT12w_HBsAg12w'].values[0]
-    alt12w_hbsag = display_df['ALT12w_HBsAg'].values[0]
+    prediction = predict(input_df)
     hbsag12wdown_1 = display_df['HBsAg12wdown_1'].values[0]
 
-    prediction = predict(input_df)
-
-    st.subheader("Prediction Results")
+    st.subheader("预测结果")
     col1, col2 = st.columns([1, 1])
     with col1:
-        st.metric("Probability of HBsAg Clearance at 48 Weeks", f"{prediction:.1%}")
+        st.metric("48周 HBsAg 清除概率", f"{prediction:.1%}")
         if prediction < 0.3:
-            st.error("Low probability of HBsAg clearance")
+            st.error("低清除概率")
         elif prediction < 0.7:
-            st.warning("Moderate probability of HBsAg clearance")
+            st.warning("中等清除概率")
         else:
-            st.success("High probability of HBsAg clearance")
-    
+            st.success("高清除概率")
+
     with col2:
-        st.subheader("Calculated Features")
-        feature_data = {
+        st.subheader("计算中间变量")
+        st.table(pd.DataFrame({
             "Feature": [
-                "Baseline HBsAg (IU/mL)",
-                "Week 12 HBsAg (IU/mL)",
-                "Week 12 ALT (IU/L)",
-                "Week 12 HBsAb",
-                "Week 12 DNA",
-                "ALT12w / HBsAg12w ratio",
-                "ALT12w / HBsAgbaseline ratio",
-                "HBsAg decline ≥ 1 log"
+                "Baseline HBsAg", "Week 12 HBsAg", "Week 12 ALT", "Week 12 HBsAb",
+                "Week 12 DNA", "ALT / HBsAg12w", "ALT / HBsAgbaseline", "HBsAg下降≥1 log"
             ],
             "Value": [
-                f"{baseline_hbsag:.2f}",
-                f"{week12_hbsag:.2f}",
-                f"{week12_alt}",
-                f"{week12_hbsab:.2f}",
-                f"{week12_dna:.2f}",
-                f"{alt12w_hbsag12w:.4f}",
-                f"{alt12w_hbsag:.4f}",
-                "Yes" if hbsag12wdown_1 == 1 else "No"
+                f"{baseline_hbsag:.2f}", f"{week12_hbsag:.2f}", f"{week12_alt}",
+                f"{week12_hbsab:.2f}", f"{week12_dna:.2f}",
+                f"{display_df['ALT12w_HBsAg12w'].values[0]:.4f}",
+                f"{display_df['ALT12w_HBsAg'].values[0]:.4f}",
+                "Yes" if hbsag12wdown_1 else "No"
             ]
-        }
-        st.table(pd.DataFrame(feature_data))
-    
-    shap_image = generate_shap_explanation(input_df, display_df)
-    st.subheader("Model Explanation (SHAP Values)")
-    st.markdown(f"<img src='data:image/png;base64,{shap_image}' style='width: 100%;'>", unsafe_allow_html=True)
-    st.info("""
-    **Interpretation Guide:**
-    - Features in red push the prediction toward HBsAg clearance (higher probability)
-    - Features in blue push the prediction away from HBsAg clearance (lower probability)
-    - The width of each bar shows how strongly that feature affects the prediction
-    """)
-    st.caption("Note: This is a prediction model and should be used as a tool to aid clinical decision-making, not as a replacement for clinical judgment.")
+        }))
 
-# Footer
+    st.subheader("模型解释（SHAP）")
+    shap_image = generate_shap_explanation(input_df, display_df)
+    st.markdown(f"<img src='data:image/png;base64,{shap_image}' style='width: 100%;'>", unsafe_allow_html=True)
+    st.info("红色特征提高清除概率，蓝色降低清除概率，条形宽度代表影响强度")
+
 st.markdown("---")
 st.caption("© 2025 - HBV Clearance Prediction Tool")
