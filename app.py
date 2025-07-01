@@ -78,10 +78,10 @@ def prepare_input_data(baseline_hbsag, week12_hbsag, week12_alt, week12_hbsab, w
     # 标准化
     temp_df = input_df[numeric_features]
     temp_df_scaled = pd.DataFrame(
-        scaler.transform(temp_df),
-        columns=numeric_features,
-        index=temp_df.index
-    )
+    scaler.transform(temp_df.loc[:, scaler.feature_names_in_]),
+    columns=scaler.feature_names_in_,
+    index=temp_df.index
+)
     input_df[numeric_features] = temp_df_scaled
 
     return input_df, display_df
