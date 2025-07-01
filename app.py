@@ -22,10 +22,11 @@ def load_model_and_preprocessors():
     model_dir = "model"
     # Load model and preprocessing objects
     lgbm_model = joblib.load(os.path.join(model_dir, "LGB_model.pkl"))
-    scaler = joblib.load(os.path.join(model_dir, "scaler.pkl"))
-    final_selected_features = ['HBsAgbaseline', 'ALT12w_HBsAg12w', 'ALT12w_HBsAg', 'HBsAg12wdown_1', 'HBsAb12w', 'DNA12w']
-    numeric_features = final_selected_features  # All features are numeric
-    categorical_features = []
+    scaler = joblib.load(os.path.join(model_dir, "scaler_reduced.pkl"))  # 使用裁剪后的scaler
+    final_selected_features = ['HBsAgbaseline', 'ALT12w_HBsAg12w', 'ALT12w_HBsAg',
+                               'HBsAg12wdown_1', 'HBsAb12w', 'DNA12w']
+    numeric_features = ['HBsAgbaseline', 'ALT12w_HBsAg12w', 'ALT12w_HBsAg', 'HBsAb12w', 'DNA12w']
+    categorical_features = ['HBsAg12wdown_1']
     return lgbm_model, scaler, final_selected_features, numeric_features, categorical_features
 
 # Load model and preprocessors
@@ -36,7 +37,7 @@ def prepare_input_data(baseline_hbsag, week12_hbsag, week12_alt, week12_hbsab, w
     # Adjust HBsAg values if ≤ 0.05
     baseline_hbsag = 0.01 if baseline_hbsag <= 0.05 else baseline_hbsag
     week12_hbsag = 0.01 if week12_hbsag <= 0.05 else week12_hbsag
-    
+
     # Calculate derived features
     hbsag_baseline = baseline_hbsag
     alt12w_hbsag12w = week12_alt / week12_hbsag if week12_hbsag > 0 else 0
@@ -46,10 +47,9 @@ def prepare_input_data(baseline_hbsag, week12_hbsag, week12_alt, week12_hbsab, w
         hbsag12wdown_1 = 1 if log_diff >= 1 else 0
     else:
         hbsag12wdown_1 = 0
-
     hbsab12w = week12_hbsab
     dna12w = week12_dna
-    
+
     # Create input dataframe
     input_df = pd.DataFrame({
         'HBsAgbaseline': [hbsag_baseline],
@@ -59,76 +59,52 @@ def prepare_input_data(baseline_hbsag, week12_hbsag, week12_alt, week12_hbsab, w
         'HBsAb12w': [hbsab12w],
         'DNA12w': [dna12w]
     })
-    
-    # Select only the features used in the model
-    input_df = input_df[final_selected_features]
-    
-    # Create a copy for display (unscaled)
+
     display_df = input_df.copy()
-    
-    # Standardize the numeric features
-    numeric_cols = [col for col in input_df.columns if col in numeric_features]
-    
-    if numeric_cols:
-        # Create a temporary dataframe with all numeric features (required for scaler)
-        temp_df = pd.DataFrame(0, index=[0], columns=numeric_features)
-        
-        # Fill in the values from input_df for selected numeric features
-        for feature in numeric_cols:
-            temp_df[feature] = input_df[feature]
-        
-        # Apply the scaler
-        temp_df_scaled = pd.DataFrame(
-            scaler.transform(temp_df),
-            index=temp_df.index,
-            columns=temp_df.columns
-        )
-        
-        # Copy back scaled values to input_df
-        for feature in numeric_cols:
-            input_df[feature] = temp_df_scaled[feature]
-    
+
+    # Standardize numeric features using reduced scaler
+    temp_df = input_df[numeric_features].copy()
+    temp_df_scaled = pd.DataFrame(
+        scaler.transform(temp_df),
+        columns=numeric_features,
+        index=temp_df.index
+    )
+
+    # Replace numeric features in input_df with scaled values
+    input_df[numeric_features] = temp_df_scaled
+
     return input_df, display_df
 
-# Function to make prediction
+# Prediction function
 def predict(input_df):
-    # Get prediction probability
-    pred_proba = lgbm_model.predict_proba(input_df)[0, 1]
-    return pred_proba
+    return lgbm_model.predict_proba(input_df)[0, 1]
 
-# Function to generate SHAP explanation
+# SHAP explanation
 def generate_shap_explanation(input_df, display_df):
-    # Create the explainer
     explainer = shap.TreeExplainer(lgbm_model)
-    
-    # Calculate SHAP values
     shap_values = explainer(input_df)
-    
-    # Use unscaled values for visualization
+
     display_values = display_df.values[0]
     feature_names = list(input_df.columns)
-    
-    # Create a SHAP explanation for the waterfall plot
+
     example_shap_values = shap.Explanation(
         values=shap_values.values[0, :, 1],
         base_values=explainer.expected_value[1],
         data=display_values,
         feature_names=feature_names
     )
-    
-    # Create the waterfall plot
+
     plt.figure(figsize=(10, 6))
     shap.plots.waterfall(example_shap_values, show=False)
     plt.title("Feature Impact on Prediction", fontsize=14)
     plt.tight_layout()
-    
-    # Convert the plot to a base64 encoded image
+
     buffer = BytesIO()
     plt.savefig(buffer, format='png', dpi=150, bbox_inches='tight')
     buffer.seek(0)
     image_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
     plt.close()
-    
+
     return image_base64
 
 # UI
@@ -139,51 +115,29 @@ with st.container():
     st.subheader("Patient Measurements")
     col1, col2, col3 = st.columns(3)
     with col1:
-        baseline_hbsag = st.number_input("Baseline HBsAg (IU/mL)", 
-                                         min_value=0.0, 
-                                         max_value=25000.0, 
-                                         value=10.0, 
-                                         step=1.0)
+        baseline_hbsag = st.number_input("Baseline HBsAg (IU/mL)", min_value=0.0, max_value=25000.0, value=10.0, step=1.0)
     with col2:
-        week12_hbsag = st.number_input("Week 12 HBsAg (IU/mL)", 
-                                       min_value=0.0, 
-                                       max_value=25000.0, 
-                                       value=10.0, 
-                                       step=1.0)
+        week12_hbsag = st.number_input("Week 12 HBsAg (IU/mL)", min_value=0.0, max_value=25000.0, value=10.0, step=1.0)
         st.caption("ℹ️ Enter 0.05 if ≤ 0.05; adjusted to 0.01.")
     with col3:
-        week12_alt = st.number_input("Week 12 ALT (IU/L)", 
-                                     min_value=0, 
-                                     max_value=5000, 
-                                     value=40, 
-                                     step=1)
+        week12_alt = st.number_input("Week 12 ALT (IU/L)", min_value=0, max_value=5000, value=40, step=1)
+
     col4, col5 = st.columns(2)
     with col4:
-        week12_hbsab = st.number_input("Week 12 HBsAb", 
-                                       min_value=0.0, 
-                                       value=0.0, 
-                                       step=0.1)
+        week12_hbsab = st.number_input("Week 12 HBsAb", min_value=0.0, value=0.0, step=0.1)
     with col5:
-        week12_dna = st.number_input("Week 12 DNA", 
-                                     min_value=0.0, 
-                                     value=0.0, 
-                                     step=0.1)
+        week12_dna = st.number_input("Week 12 DNA", min_value=0.0, value=0.0, step=0.1)
 
 if st.button("Calculate Prediction"):
-    # Prepare input data
     input_df, display_df = prepare_input_data(baseline_hbsag, week12_hbsag, week12_alt, week12_hbsab, week12_dna)
     
-    # Extract calculated features for display
     alt12w_hbsag12w = display_df['ALT12w_HBsAg12w'].values[0]
     alt12w_hbsag = display_df['ALT12w_HBsAg'].values[0]
     hbsag12wdown_1 = display_df['HBsAg12wdown_1'].values[0]
-    
-    # Make prediction
+
     prediction = predict(input_df)
-    
-    # Display results
+
     st.subheader("Prediction Results")
-    
     col1, col2 = st.columns([1, 1])
     with col1:
         st.metric("Probability of HBsAg Clearance at 48 Weeks", f"{prediction:.1%}")
@@ -205,7 +159,7 @@ if st.button("Calculate Prediction"):
                 "Week 12 DNA",
                 "ALT12w / HBsAg12w ratio",
                 "ALT12w / HBsAgbaseline ratio",
-                "HBsAg decline ≥ 10 IU/mL"
+                "HBsAg decline ≥ 1 log"
             ],
             "Value": [
                 f"{baseline_hbsag:.2f}",
@@ -220,18 +174,15 @@ if st.button("Calculate Prediction"):
         }
         st.table(pd.DataFrame(feature_data))
     
-    # Generate and display SHAP explanation
     shap_image = generate_shap_explanation(input_df, display_df)
     st.subheader("Model Explanation (SHAP Values)")
     st.markdown(f"<img src='data:image/png;base64,{shap_image}' style='width: 100%;'>", unsafe_allow_html=True)
-    
     st.info("""
     **Interpretation Guide:**
     - Features in red push the prediction toward HBsAg clearance (higher probability)
     - Features in blue push the prediction away from HBsAg clearance (lower probability)
     - The width of each bar shows how strongly that feature affects the prediction
     """)
-    
     st.caption("Note: This is a prediction model and should be used as a tool to aid clinical decision-making, not as a replacement for clinical judgment.")
 
 # Footer
