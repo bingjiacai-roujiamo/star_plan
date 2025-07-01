@@ -75,13 +75,13 @@ def prepare_input_data(baseline_hbsag, week12_hbsag, week12_alt, week12_hbsab, w
 
     display_df = input_df.copy()
 
-    # 标准化
+    # Standardize numeric features
     temp_df = input_df[numeric_features]
     temp_df_scaled = pd.DataFrame(
-    scaler.transform(temp_df.loc[:, scaler.feature_names_in_]),
-    columns=scaler.feature_names_in_,
-    index=temp_df.index
-)
+        scaler.transform(temp_df.loc[:, scaler.feature_names_in_]),
+        columns=scaler.feature_names_in_,
+        index=temp_df.index
+    )
     input_df[numeric_features] = temp_df_scaled
 
     return input_df, display_df
@@ -110,19 +110,19 @@ def generate_shap_explanation(input_df, display_df):
     return image_base64
 
 # ---------------------------
-# UI 部分
+# UI Section
 # ---------------------------
 st.title("HBsAg Clearance Prediction")
-st.write("预测患者在48周时清除HBsAg的概率")
+st.write("Predict the probability of hepatitis B surface antigen clearance at 48 weeks")
 
 with st.container():
-    st.subheader("输入患者数据")
+    st.subheader("Enter Patient Data")
     col1, col2, col3 = st.columns(3)
     with col1:
         baseline_hbsag = st.number_input("Baseline HBsAg (IU/mL)", 0.0, 25000.0, 10.0, 1.0)
     with col2:
         week12_hbsag = st.number_input("Week 12 HBsAg (IU/mL)", 0.0, 25000.0, 10.0, 1.0)
-        st.caption("ℹ️ 输入 ≤ 0.05 用 0.05，系统内部会转换为 0.01")
+        st.caption("ℹ️ Enter 0.05 if ≤ 0.05; system internally converts to 0.01")
     with col3:
         week12_alt = st.number_input("Week 12 ALT (IU/L)", 0, 5000, 40, 1)
 
@@ -132,28 +132,28 @@ with st.container():
     with col5:
         week12_dna = st.number_input("Week 12 DNA", 0.0, value=0.0, step=0.1)
 
-if st.button("开始预测"):
+if st.button("Predict"):
     input_df, display_df = prepare_input_data(baseline_hbsag, week12_hbsag, week12_alt, week12_hbsab, week12_dna)
     prediction = predict(input_df)
     hbsag12wdown_1 = display_df['HBsAg12wdown_1'].values[0]
 
-    st.subheader("预测结果")
+    st.subheader("Prediction Result")
     col1, col2 = st.columns([1, 1])
     with col1:
-        st.metric("48周 HBsAg 清除概率", f"{prediction:.1%}")
+        st.metric("48-week HBsAg Clearance Probability", f"{prediction:.1%}")
         if prediction < 0.3:
-            st.error("低清除概率")
+            st.error("Low clearance probability")
         elif prediction < 0.7:
-            st.warning("中等清除概率")
+            st.warning("Moderate clearance probability")
         else:
-            st.success("高清除概率")
+            st.success("High clearance probability")
 
     with col2:
-        st.subheader("计算中间变量")
+        st.subheader("Calculated Features")
         st.table(pd.DataFrame({
             "Feature": [
                 "Baseline HBsAg", "Week 12 HBsAg", "Week 12 ALT", "Week 12 HBsAb",
-                "Week 12 DNA", "ALT / HBsAg12w", "ALT / HBsAgbaseline", "HBsAg下降≥1 log"
+                "Week 12 DNA", "ALT / HBsAg12w", "ALT / HBsAgbaseline", "HBsAg decline ≥1 log"
             ],
             "Value": [
                 f"{baseline_hbsag:.2f}", f"{week12_hbsag:.2f}", f"{week12_alt}",
@@ -164,10 +164,10 @@ if st.button("开始预测"):
             ]
         }))
 
-    st.subheader("模型解释（SHAP）")
+    st.subheader("Model Explanation (SHAP)")
     shap_image = generate_shap_explanation(input_df, display_df)
     st.markdown(f"<img src='data:image/png;base64,{shap_image}' style='width: 100%;'>", unsafe_allow_html=True)
-    st.info("红色特征提高清除概率，蓝色降低清除概率，条形宽度代表影响强度")
+    st.info("Red features increase clearance probability, blue features decrease it, bar width indicates impact strength")
 
 st.markdown("---")
 st.caption("© 2025 - HBV Clearance Prediction Tool")
