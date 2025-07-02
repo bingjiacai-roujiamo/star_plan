@@ -113,7 +113,7 @@ def generate_shap_explanation(input_df, display_df):
 # UI Section
 # ---------------------------
 st.title("HBsAg Clearance Prediction")
-st.write("Predict the probability of hepatitis B surface antigen clearance at 48 weeks")
+st.write("Predict the probability of hepatitis B surface antigen clearance at 24 weeks")
 
 with st.container():
     st.subheader("Enter Patient Data")
@@ -140,7 +140,7 @@ if st.button("Predict"):
     st.subheader("Prediction Result")
     col1, col2 = st.columns([1, 1])
     with col1:
-        st.metric("half year HBsAg Clearance Probability", f"{prediction:.1%}")
+        st.metric("HBsAg Clearance Probability at 24w", f"{prediction:.1%}")
         if prediction < 0.3:
             st.error("Low clearance probability")
         elif prediction < 0.7:
