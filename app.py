@@ -130,7 +130,7 @@ with st.container():
     with col4:
         week12_hbsab = st.number_input("Week 12 HBsAb (IU/L)", 0.0, value=0.0, step=0.1)
     with col5:
-        week12_dna = st.number_input("Week 12 DNA (IU/ml)", 0.0, value=0.0, step=0.1)
+        week12_dna = st.number_input("Week 12 DNA (IU/mL)", 0.0, value=0.0, step=0.1)
 
 if st.button("Predict"):
     input_df, display_df = prepare_input_data(baseline_hbsag, week12_hbsag, week12_alt, week12_hbsab, week12_dna)
