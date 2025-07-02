@@ -124,13 +124,13 @@ with st.container():
         week12_hbsag = st.number_input("Week 12 HBsAg (IU/mL)", 0.0, 25000.0, 10.0, 1.0)
         st.caption("ℹ️ Enter 0.05 if ≤ 0.05; system internally converts to 0.01")
     with col3:
-        week12_alt = st.number_input("Week 12 ALT (IU/L)", 0, 5000, 40, 1)
+        week12_alt = st.number_input("Week 12 ALT (U/L)", 0, 5000, 40, 1)
 
     col4, col5 = st.columns(2)
     with col4:
-        week12_hbsab = st.number_input("Week 12 HBsAb", 0.0, value=0.0, step=0.1)
+        week12_hbsab = st.number_input("Week 12 HBsAb (IU/L)", 0.0, value=0.0, step=0.1)
     with col5:
-        week12_dna = st.number_input("Week 12 DNA", 0.0, value=0.0, step=0.1)
+        week12_dna = st.number_input("Week 12 DNA (IU/ml)", 0.0, value=0.0, step=0.1)
 
 if st.button("Predict"):
     input_df, display_df = prepare_input_data(baseline_hbsag, week12_hbsag, week12_alt, week12_hbsab, week12_dna)
@@ -140,7 +140,7 @@ if st.button("Predict"):
     st.subheader("Prediction Result")
     col1, col2 = st.columns([1, 1])
     with col1:
-        st.metric("48-week HBsAg Clearance Probability", f"{prediction:.1%}")
+        st.metric("half year HBsAg Clearance Probability", f"{prediction:.1%}")
         if prediction < 0.3:
             st.error("Low clearance probability")
         elif prediction < 0.7:
