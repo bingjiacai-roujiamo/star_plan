@@ -119,9 +119,9 @@ with st.container():
     st.subheader("Enter Patient Data")
     col1, col2, col3 = st.columns(3)
     with col1:
-        baseline_hbsag = st.number_input("Baseline HBsAg (IU/mL)", 0.0, 25000.0, 10.0, 1.0)
+        baseline_hbsag = st.number_input("Baseline HBsAg (IU/ml)", 0.0, 25000.0, 10.0, 1.0)
     with col2:
-        week12_hbsag = st.number_input("Week 12 HBsAg (IU/mL)", 0.0, 25000.0, 10.0, 1.0)
+        week12_hbsag = st.number_input("Week 12 HBsAg (IU/ml)", 0.0, 25000.0, 10.0, 1.0)
         st.caption("ℹ️ Enter 0.05 if ≤ 0.05; system internally converts to 0.01")
     with col3:
         week12_alt = st.number_input("Week 12 ALT (U/L)", 0, 5000, 40, 1)
@@ -130,7 +130,7 @@ with st.container():
     with col4:
         week12_hbsab = st.number_input("Week 12 HBsAb (IU/L)", 0.0, value=0.0, step=0.1)
     with col5:
-        week12_dna = st.number_input("Week 12 DNA (IU/mL)", 0.0, value=0.0, step=0.1)
+        week12_dna = st.number_input("Week 12 DNA (IU/ml)", 0.0, value=0.0, step=0.1)
 
 if st.button("Predict"):
     input_df, display_df = prepare_input_data(baseline_hbsag, week12_hbsag, week12_alt, week12_hbsab, week12_dna)
